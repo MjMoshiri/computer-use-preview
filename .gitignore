@@ -175,3 +175,5 @@ cython_debug/
 
 # Node stuff
 node_modules/
+run_leetcode_random.sh
+run_leetcode_streak.sh

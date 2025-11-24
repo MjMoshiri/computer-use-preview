@@ -28,6 +28,11 @@ import time
 from rich.console import Console
 from rich.table import Table
 
+import telegram
+import asyncio
+import nest_asyncio
+nest_asyncio.apply()
+
 from computers import EnvState, Computer
 
 MAX_RECENT_TURN_WITH_SCREENSHOTS = 3
@@ -194,7 +199,9 @@ class BrowserAgent:
             raise ValueError(f"Unsupported function: {action}")
 
     def get_model_response(
-        self, max_retries=5, base_delay_s=1
+        self,
+        max_retries=5,
+        base_delay_s=1
     ) -> types.GenerateContentResponse:
         for attempt in range(max_retries):
             try:
@@ -390,19 +397,76 @@ class BrowserAgent:
         self, safety: dict[str, Any]
     ) -> Literal["CONTINUE", "TERMINATE"]:
         if safety["decision"] != "require_confirmation":
-            raise ValueError(f"Unknown safety decision: safety['decision']")
+            raise ValueError(f"Unknown safety decision: {safety['decision']}")
+
+        async def send_telegram_message():                                                                                      
+            telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")                                                           
+            telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID")                                                               
+            if telegram_bot_token and telegram_chat_id:                                                                         
+                bot = telegram.Bot(token=telegram_bot_token)                                                                    
+                await bot.send_message(chat_id=telegram_chat_id, text="Please approve leetcode")                                
+            else:                                                                                                               
+                logging.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. Skipping Telegram notification.")              
+
+        asyncio.run(send_telegram_message())
+
         termcolor.cprint(
             "Safety service requires explicit confirmation!",
             color="yellow",
             attrs=["bold"],
         )
         print(safety["explanation"])
-        decision = ""
-        while decision.lower() not in ("y", "n", "ye", "yes", "no"):
-            decision = input("Do you wish to proceed? [Yes]/[No]\n")
-        if decision.lower() in ("n", "no"):
-            return "TERMINATE"
-        return "CONTINUE"
+        termcolor.cprint(
+            "\nPlease go to the UI to approve this step.",
+            color="cyan",
+        )
+
+        last_url = None
+        for content in reversed(self._contents):
+            if content.role == "user" and content.parts:
+                for part in content.parts:
+                    if (
+                        part.function_response
+                        and isinstance(part.function_response.response, dict)
+                        and "url" in part.function_response.response
+                    ):
+                        last_url = part.function_response.response["url"]
+                        break
+            if last_url is not None:
+                break
+
+        if last_url:
+            termcolor.cprint(
+                f"Waiting for page to navigate away from current URL: {last_url}",
+                color="cyan",
+            )
+        else:
+            termcolor.cprint(
+                "Waiting for page navigation to confirm action...",
+                color="cyan",
+            )
+
+        timeout_seconds = 300
+        start_time = time.time()
+        while time.time() - start_time < timeout_seconds:
+            current_env_state = self._browser_computer.current_state()
+            new_url = current_env_state.url
+            if last_url is None or new_url != last_url:
+                termcolor.cprint(
+                    "Page URL has changed. Assuming safety confirmation is approved.",
+                    color="green",
+                )
+                if last_url is not None:
+                    print(f"Old URL: {last_url}")
+                print(f"New URL: {new_url}")
+                return "CONTINUE"
+            time.sleep(1)
+
+        termcolor.cprint(
+            f"Timed out waiting for safety confirmation. Page URL did not change from {last_url}",
+            color="red",
+        )
+        return "TERMINATE"
 
     def agent_loop(self):
         status = "CONTINUE"

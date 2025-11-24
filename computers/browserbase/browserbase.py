@@ -15,7 +15,7 @@ import os
 import termcolor
 from ..playwright.playwright import PlaywrightComputer
 import browserbase
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 
 class BrowserbaseComputer(PlaywrightComputer):

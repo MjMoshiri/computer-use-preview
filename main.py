@@ -13,6 +13,7 @@
 # limitations under the License.
 import argparse
 import os
+from dotenv import load_dotenv
 
 from agent import BrowserAgent
 from computers import BrowserbaseComputer, PlaywrightComputer
@@ -22,6 +23,7 @@ PLAYWRIGHT_SCREEN_SIZE = (1440, 900)
 
 
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Run the browser agent with a query.")
     parser.add_argument(
         "--query",
@@ -54,6 +56,12 @@ def main() -> int:
         default='gemini-2.5-computer-use-preview-10-2025',
         help="Set which main model to use.",
     )
+    parser.add_argument(
+        "--creds",
+        type=str,
+        nargs=2,
+        help="Username and password for login.",
+    )
     args = parser.parse_args()
 
     if args.env == "playwright":
@@ -61,6 +69,7 @@ def main() -> int:
             screen_size=PLAYWRIGHT_SCREEN_SIZE,
             initial_url=args.initial_url,
             highlight_mouse=args.highlight_mouse,
+            creds=args.creds,
         )
     elif args.env == "browserbase":
         env = BrowserbaseComputer(

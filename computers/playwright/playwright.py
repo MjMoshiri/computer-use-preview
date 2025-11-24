@@ -20,9 +20,9 @@ from ..computer import (
     Computer,
     EnvState,
 )
-import playwright.sync_api
-from playwright.sync_api import sync_playwright
-from typing import Literal
+import patchright.sync_api as patchright_sync_api
+from patchright.sync_api import sync_playwright
+from typing import Literal, Union
 
 # Define a mapping from the user-friendly key names to Playwright's expected key names.
 # Playwright is generally good with case-insensitivity for these, but it's best to be canonical.
@@ -81,13 +81,15 @@ class PlaywrightComputer(Computer):
         initial_url: str = "https://www.google.com",
         search_engine_url: str = "https://www.google.com",
         highlight_mouse: bool = False,
+        creds: Union[tuple[str, str], None] = None,
     ):
         self._initial_url = initial_url
         self._screen_size = screen_size
         self._search_engine_url = search_engine_url
         self._highlight_mouse = highlight_mouse
+        self._creds = creds
 
-    def _handle_new_page(self, new_page: playwright.sync_api.Page):
+    def _handle_new_page(self, new_page: patchright_sync_api.Page):
         """The Computer Use model only supports a single tab at the moment.
 
         Some websites, however, try to open links in a new tab.
@@ -101,6 +103,7 @@ class PlaywrightComputer(Computer):
         print("Creating session...")
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.launch(
+            channel="chrome",
             args=[
                 "--disable-extensions",
                 "--disable-file-system",
@@ -121,11 +124,21 @@ class PlaywrightComputer(Computer):
         )
         self._page = self._context.new_page()
         self._page.goto(self._initial_url)
+        self._page.wait_for_load_state()
+        
+        if self._creds:
+            time.sleep(5)
+            try:
+                self._page.locator('[autocomplete="username"]').fill(self._creds[0])
+                self._page.locator('[autocomplete="password"]').fill(self._creds[1])
+                self._page.wait_for_load_state()
+            except Exception:
+                logging.warning("Could not find username/password fields.")
 
         self._context.on("page", self._handle_new_page)
 
         termcolor.cprint(
-            f"Started local playwright.",
+            f"Started local patchright session.",
             color="green",
             attrs=["bold"],
         )
@@ -309,7 +322,7 @@ class PlaywrightComputer(Computer):
 
     def screen_size(self) -> tuple[int, int]:
         viewport_size = self._page.viewport_size
-        # If available, try to take the local playwright viewport size.
+        # If available, try to take the local patchright viewport size.
         if viewport_size:
             return viewport_size["width"], viewport_size["height"]
         # If unavailable, fall back to the original provided size.
@@ -321,7 +334,7 @@ class PlaywrightComputer(Computer):
         self._page.evaluate(
             f"""
         () => {{
-            const element_id = "playwright-feedback-circle";
+            const element_id = "patchright-feedback-circle";
             const div = document.createElement('div');
             div.id = element_id;
             div.style.pointerEvents = 'none';
